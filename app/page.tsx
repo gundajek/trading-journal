@@ -2,6 +2,8 @@
 
 import { useState, ChangeEvent, useEffect, useRef } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 
 const getCurrentDateTimeLocal = () => {
   const now = new Date();
@@ -13,9 +15,7 @@ const formatTimeOnly = (dateString: string) => {
   if (!dateString) return '-';
   try {
     const d = new Date(dateString);
-    // ვამოწმებთ რომ სწორი თარიღია
     if (isNaN(d.getTime())) return '-';
-    // ვიყენებთ სტანდარტულ, უსაფრთხო ფორმატს რომელიც სერვერზე და კლიენტზე ერთნაირად რენდერდება
     return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
   } catch {
     return '-';
@@ -23,7 +23,7 @@ const formatTimeOnly = (dateString: string) => {
 };
 
 interface Trade {
-  id: number;
+  id: string;
   openTime: string;
   closeTime: string;
   day: string;
@@ -45,25 +45,35 @@ interface BacktestSession {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'live' | 'backtest'>('live');
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const [isPrinting, setIsPrinting] = useState(false);
-  const [printedCash, setPrintedCash] = useState<{ id: number; offset: number; delay: number }[]>([]);
 
-  const [liveTrades, setLiveTrades] = useState<Trade[]>([
-    { id: 1, openTime: '2026-07-27T10:15', closeTime: '2026-07-27T11:00', day: 'ორშაბათი', duration: '45წთ', instrument: 'NQ', setup: '10:00 AM Candle', account: 'Evaluation', rr: '1:1.6', targetPnl: 1000, realizedPnl: 650, images: [] }
-  ]);
+  const [liveTrades, setLiveTrades] = useState<Trade[]>([]);
 
   const [backtestSessions, setBacktestSessions] = useState<BacktestSession[]>([
-    { id: '1', name: 'სტრატეგია #1 (FVG Test)', trades: [
-      { id: 1, openTime: '2026-07-01T09:30', closeTime: '2026-07-01T10:30', day: 'ოთხშაბათი', duration: '1სთ', instrument: 'ES', setup: 'FVG Model', account: 'Backtest', rr: '1:2.0', targetPnl: 500, realizedPnl: 500, images: [] }
-    ]}
+    { id: '1', name: 'სტრატეგია #1 (FVG Test)', trades: [] }
   ]);
   const [activeSessionId, setActiveSessionId] = useState<string>('1');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Firebase-იდან ტრეიდების რეალურ დროში წამოღება
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'trades'), (snapshot) => {
+      const tradesData = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      })) as Trade[];
+      
+      const live = tradesData.filter(t => t.account !== 'Backtest');
+      setLiveTrades(live);
+    }, (error) => {
+      console.error("Firebase Read Error: ", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -76,7 +86,7 @@ export default function Home() {
   }, []);
 
   const [formData, setFormData] = useState({
-    openTime: '', closeTime: '', instrument: 'NQ', account: 'Live Funded', setup: '', risk: '', targetPnl: '', realizedPnl: '', notes: '', images: [] as string[]
+    openTime: '', closeTime: '', instrument: 'NQ', account: 'Live Funded', setup: '', risk: '', targetPnl: '', realizedPnl: '', images: [] as string[]
   });
 
   useEffect(() => {
@@ -91,21 +101,6 @@ export default function Home() {
       }));
     }
   }, [isModalOpen, activeTab]);
-
-  const startPrinting = () => {
-    if (isPrinting) return;
-    setIsPrinting(true);
-    const cashItems = Array.from({ length: 8 }).map((_, i) => ({
-      id: Date.now() + i,
-      offset: i * 25,
-      delay: i * 0.3
-    }));
-    setPrintedCash(cashItems);
-    setTimeout(() => {
-      setIsPrinting(false);
-      setPrintedCash([]);
-    }, 2500);
-  };
 
   const handleMultipleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -132,7 +127,7 @@ export default function Home() {
     return h > 0 ? `${h}სთ ${m}წთ` : `${m}წთ`;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const riskVal = parseFloat(formData.risk);
     const targetVal = parseFloat(formData.targetPnl);
     const realizedVal = parseFloat(formData.realizedPnl);
@@ -143,8 +138,7 @@ export default function Home() {
       realizedRR = realizedVal < 0 ? `-${ratio}R` : `1:${ratio}`;
     }
 
-    const newTrade: Trade = {
-      id: Date.now(),
+    const newTrade = {
       openTime: formData.openTime,
       closeTime: formData.closeTime,
       day: getDayOfWeek(formData.openTime),
@@ -158,24 +152,35 @@ export default function Home() {
       images: formData.images
     };
 
-    if (activeTab === 'backtest') {
-      setBacktestSessions(prev => prev.map(session => {
-        if (session.id === activeSessionId) {
-          return { ...session, trades: [newTrade, ...session.trades] };
-        }
-        return session;
-      }));
-    } else {
-      setLiveTrades([newTrade, ...liveTrades]);
+    try {
+      if (activeTab === 'backtest') {
+        setBacktestSessions(prev => prev.map(session => {
+          if (session.id === activeSessionId) {
+            return { ...session, trades: [{ id: Date.now().toString(), ...newTrade }, ...session.trades] };
+          }
+          return session;
+        }));
+      } else {
+        // აქსელერაცია და შენახვა Firebase ბაზაში
+        const docRef = await addDoc(collection(db, 'trades'), newTrade);
+        console.log("Trade successfully written with ID: ", docRef.id);
+      }
+    } catch (error) {
+      console.error("შეცდომა შენახვისას: ", error);
+      alert("ვერ მოხერხდა ბაზაში შენახვა. შეამოწმე კონსოლი.");
     }
 
     setIsModalOpen(false);
-    setFormData({ ...formData, setup: '', risk: '', targetPnl: '', realizedPnl: '', notes: '' });
+    setFormData({ ...formData, setup: '', risk: '', targetPnl: '', realizedPnl: '', images: [] });
   };
 
-  const handleDeleteTrade = (tradeId: number) => {
+  const handleDeleteTrade = async (tradeId: string) => {
     if (activeTab === 'live') {
-      setLiveTrades(liveTrades.filter(t => t.id !== tradeId));
+      try {
+        await deleteDoc(doc(db, 'trades', tradeId));
+      } catch (error) {
+        console.error("შეცდომა წაშლისას: ", error);
+      }
     } else {
       setBacktestSessions(prev => prev.map(session => {
         if (session.id === activeSessionId) {
@@ -272,7 +277,7 @@ export default function Home() {
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight text-white">Trading Journal</h1>
               <p className="text-xs text-slate-300 font-medium">
-                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
+                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი (Firebase)' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
               </p>
             </div>
           </div>
@@ -286,13 +291,9 @@ export default function Home() {
                 ლაივ ჟურნალი
               </button>
               
-              {/* ბექტესტინგის მენიუ და დროპდაუნი */}
               <div className="relative" ref={dropdownRef}>
                 <button
-                  onClick={() => {
-                    // მხოლოდ ვხსნით/ვკეტავთ დროპდაუნს და რეჟიმს ავტომატურად არ ვცვლით
-                    setIsDropdownOpen(!isDropdownOpen);
-                  }}
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                   className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'backtest' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'text-slate-400 hover:text-white'}`}
                 >
                   🔬 ბექტესტინგი ▾
@@ -307,7 +308,7 @@ export default function Home() {
                           key={session.id}
                           onClick={() => {
                             setActiveSessionId(session.id);
-                            setActiveTab('backtest'); // სესიის არჩევისას გადაგვყავს ბექტესტში
+                            setActiveTab('backtest');
                             setIsDropdownOpen(false);
                           }}
                           className={`px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors flex justify-between items-center ${activeTab === 'backtest' && session.id === activeSessionId ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/30' : 'text-slate-300 hover:bg-white/5'}`}
@@ -337,15 +338,12 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex gap-2">
-              <button 
-                onClick={() => setIsModalOpen(true)} 
-                onMouseEnter={startPrinting}
-                className="relative bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(59,130,246,0.5)] border border-blue-300/50 active:scale-95"
-              >
-                + ახალი ტრეიდი
-              </button>
-            </div>
+            <button 
+              onClick={() => setIsModalOpen(true)} 
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(59,130,246,0.5)] border border-blue-300/50 active:scale-95"
+            >
+              + ახალი ტრეიდი
+            </button>
           </div>
         </header>
 
@@ -431,23 +429,6 @@ export default function Home() {
               ))}
             </div>
           </div>
-
-          <div className={`${glassCard} p-6 lg:col-span-3`}>
-            <h3 className="text-sm font-bold text-slate-100 mb-6 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-indigo-400"></span> მოგებული ტრეიდების რაოდენობა დღეების მიხედვით
-            </h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={daysData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" vertical={false} />
-                  <XAxis dataKey="name" stroke="#cbd5e1" fontSize={12} tickLine={false} axisLine={{ stroke: '#ffffff15' }} />
-                  <YAxis stroke="#cbd5e1" fontSize={12} tickLine={false} axisLine={{ stroke: '#ffffff15' }} allowDecimals={false} />
-                  <Tooltip cursor={{ fill: 'rgba(255,255,255,0.06)' }} contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255,255,255,0.2)', color: '#f8fafc', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
-                  <Bar dataKey="winCount" fill="#34d399" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
         </div>
 
         {/* Table Section */}
@@ -471,7 +452,7 @@ export default function Home() {
                 {trades.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-8 text-center text-slate-400">
-                      ტრეიდები არ მოიძებნა. დაამატეთ ახალი ტრეიდი ღილაკით.
+                      ტრეიდები არ მოიძებნა ბაზაში. დაამატეთ ახალი ტრეიდი.
                     </td>
                   </tr>
                 ) : (
@@ -534,11 +515,9 @@ export default function Home() {
             <div className="absolute top-[-50px] right-[-50px] w-40 h-40 bg-blue-500/30 rounded-full blur-[50px] pointer-events-none"></div>
             
             <div className="flex justify-between items-center mb-6 relative z-10">
-              <h2 className="text-2xl font-extrabold text-white">
-                {activeTab === 'backtest' ? `ტესტი: ${currentBacktestSession?.name}` : 'ახალი ტრეიდი'}
-              </h2>
+              <h2 className="text-2xl font-extrabold text-white">ახალი ტრეიდი</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 p-2.5 rounded-2xl transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                ✕
               </button>
             </div>
             
@@ -565,21 +544,15 @@ export default function Home() {
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">ანგარიში</label>
                   <select value={formData.account} onChange={(e) => setFormData({...formData, account: e.target.value})} className={glassInput}>
-                    {activeTab === 'backtest' ? (
-                      <option value="Backtest" className="bg-slate-950">Backtest Model</option>
-                    ) : (
-                      <>
-                        <option value="Live Funded" className="bg-slate-950">Live Funded</option>
-                        <option value="Evaluation" className="bg-slate-950">Evaluation</option>
-                      </>
-                    )}
+                    <option value="Live Funded" className="bg-slate-950">Live Funded</option>
+                    <option value="Evaluation" className="bg-slate-950">Evaluation</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">სტრატეგია / სეთაფი (ხელით)</label>
-                <input type="text" value={formData.setup} onChange={(e) => setFormData({...formData, setup: e.target.value})} placeholder="მაგ: Test Setup V1 ან FVG" className={glassInput} />
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">სტრატეგია / სეთაფი</label>
+                <input type="text" value={formData.setup} onChange={(e) => setFormData({...formData, setup: e.target.value})} placeholder="მაგ: FVG" className={glassInput} />
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -600,11 +573,10 @@ export default function Home() {
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">ფოტოების ატვირთვა</label>
                 <input type="file" accept="image/*" multiple onChange={handleMultipleImageUpload} className="w-full bg-slate-950/60 backdrop-blur-md border border-white/15 rounded-2xl p-2.5 text-slate-200 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer transition-all" />
-                {formData.images.length > 0 && <p className="text-xs text-emerald-400 mt-2 font-bold">ატვირთულია {formData.images.length} ფოტო</p>}
               </div>
 
               <button type="button" onClick={handleSave} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-3.5 rounded-2xl font-extrabold transition-all mt-4 shadow-[0_0_25px_rgba(59,130,246,0.6)] border border-blue-300/50">
-                შენახვა
+                შენახვა ბაზაში
               </button>
             </form>
           </div>
@@ -616,24 +588,16 @@ export default function Home() {
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-2xl flex items-center justify-center p-6 z-[60] overflow-y-auto">
           <div className="w-full max-w-6xl">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-extrabold text-white">ჩარტები ({galleryImages.length})</h3>
-              <button onClick={() => setGalleryImages(null)} className="bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-white px-5 py-2.5 rounded-2xl text-sm font-bold transition-all shadow-lg">
+              <h3 className="text-2xl font-extrabold text-white">ჩარტები</h3>
+              <button onClick={() => setGalleryImages(null)} className="bg-white/15 hover:bg-white/25 text-white px-5 py-2.5 rounded-2xl text-sm font-bold transition-all">
                 ✕ დახურვა
               </button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {galleryImages.map((img, idx) => (
-                <div key={idx} className="relative group bg-slate-900/70 backdrop-blur-md p-3 rounded-3xl border border-white/20 shadow-[0_20px_40px_rgba(0,0,0,0.6)] overflow-hidden">
-                  <img 
-                    src={img} 
-                    alt={`Chart ${idx + 1}`} 
-                    className="w-full h-auto object-contain max-h-[45vh] rounded-2xl cursor-pointer group-hover:scale-[1.02] transition-transform duration-300" 
-                    onClick={() => setZoomedImage(img)}
-                  />
-                  <div className="absolute bottom-6 left-6 bg-black/60 backdrop-blur-md text-white/80 px-3 py-1 rounded-lg text-xs pointer-events-none">
-                    დააკლიკეთ ფოტოს გასადიდებლად
-                  </div>
+                <div key={idx} className="relative group bg-slate-900/70 p-3 rounded-3xl border border-white/20">
+                  <img src={img} alt="Chart" className="w-full h-auto object-contain max-h-[45vh] rounded-2xl cursor-pointer" onClick={() => setZoomedImage(img)} />
                 </div>
               ))}
             </div>
@@ -641,42 +605,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Full Zoom Modal */}
+      {/* Zoom Modal */}
       {zoomedImage && (
-        <div 
-          className="fixed inset-0 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center z-[70] p-4 cursor-zoom-out" 
-          onClick={() => setZoomedImage(null)}
-        >
-          <img 
-            src={zoomedImage} 
-            alt="Zoomed Chart" 
-            className="max-w-full max-h-[90vh] object-contain shadow-[0_25px_60px_rgba(0,0,0,0.8)] rounded-2xl border border-white/20 cursor-pointer" 
-            onClick={() => setZoomedImage(null)}
-          />
-          <p className="text-slate-400 text-sm mt-4 select-none pointer-events-none">
-            გამოსაზუმებლად დააკლიკეთ სურათს ან ფონს
-          </p>
+        <div className="fixed inset-0 bg-black/95 flex flex-col items-center justify-center z-[70] p-4 cursor-zoom-out" onClick={() => setZoomedImage(null)}>
+          <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[90vh] object-contain rounded-2xl border border-white/20" />
         </div>
       )}
-
-      <style jsx global>{`
-        @keyframes printCash {
-          0% {
-            transform: translateX(0) scale(0.6);
-            opacity: 0;
-          }
-          50% {
-            opacity: 1;
-          }
-          100% {
-            transform: translateX(-65px) translateY(-15px) scale(1.1);
-            opacity: 0;
-          }
-        }
-        .animate-print-cash {
-          animation: printCash 1.2s ease-out infinite;
-        }
-      `}</style>
     </div>
   );
 }
