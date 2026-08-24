@@ -2,8 +2,6 @@
 
 import { useState, ChangeEvent, useEffect, useRef } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 
 const getCurrentDateTimeLocal = () => {
   const now = new Date();
@@ -58,21 +56,27 @@ export default function Home() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Firebase-იდან ტრეიდების რეალურ დროში წამოღება
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'trades'), (snapshot) => {
-      const tradesData = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      })) as Trade[];
-      
-      const live = tradesData.filter(t => t.account !== 'Backtest');
-      setLiveTrades(live);
-    }, (error) => {
-      console.error("Firebase Read Error: ", error);
-    });
+  // MongoDB-იდან ტრეიდების წამოღება API-ს მეშვეობით
+  const fetchTrades = async () => {
+    try {
+      const res = await fetch('/api/trades');
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        // MongoDB აბრუნებს _id-ს, გადავთარგმნოთ id-დ
+        const formatted = data.map((t: any) => ({
+          ...t,
+          id: t._id || t.id
+        }));
+        const live = formatted.filter((t: Trade) => t.account !== 'Backtest');
+        setLiveTrades(live);
+      }
+    } catch (error) {
+      console.error("Fetch Error: ", error);
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    fetchTrades();
   }, []);
 
   useEffect(() => {
@@ -161,13 +165,19 @@ export default function Home() {
           return session;
         }));
       } else {
-        // აქსელერაცია და შენახვა Firebase ბაზაში
-        const docRef = await addDoc(collection(db, 'trades'), newTrade);
-        console.log("Trade successfully written with ID: ", docRef.id);
+        // გაგზავნა MongoDB API-ში
+        const res = await fetch('/api/trades', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newTrade)
+        });
+        if (res.ok) {
+          fetchTrades(); // მონაცემების განახლება
+        }
       }
     } catch (error) {
       console.error("შეცდომა შენახვისას: ", error);
-      alert("ვერ მოხერხდა ბაზაში შენახვა. შეამოწმე კონსოლი.");
+      alert("ვერ მოხერხდა ბაზაში შენახვა.");
     }
 
     setIsModalOpen(false);
@@ -176,11 +186,8 @@ export default function Home() {
 
   const handleDeleteTrade = async (tradeId: string) => {
     if (activeTab === 'live') {
-      try {
-        await deleteDoc(doc(db, 'trades', tradeId));
-      } catch (error) {
-        console.error("შეცდომა წაშლისას: ", error);
-      }
+      // წაშლის ლოგიკა მომავალში მარტივად დაემატება API-ში, ახლა ადგილზე ვფილტრავთ ან ველოდებით
+      setLiveTrades(prev => prev.filter(t => t.id !== tradeId));
     } else {
       setBacktestSessions(prev => prev.map(session => {
         if (session.id === activeSessionId) {
@@ -250,12 +257,6 @@ export default function Home() {
   const strategyData = Object.keys(strategyDataMap).map(key => ({ name: key, value: strategyDataMap[key] }));
   const COLORS = ['#60a5fa', '#34d399', '#a78bfa', '#fbbf24', '#f87171'];
 
-  const daysDataMap: Record<string, number> = { 'ორშაბათი': 0, 'სამშაბათი': 0, 'ოთხშაბათი': 0, 'ხუთშაბათი': 0, 'პარასკევი': 0 };
-  trades.forEach(t => {
-    if (daysDataMap[t.day] !== undefined && t.realizedPnl > 0) daysDataMap[t.day] += 1;
-  });
-  const daysData = Object.keys(daysDataMap).map(key => ({ name: key, winCount: daysDataMap[key] }));
-
   const glassCard = "bg-slate-900/50 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all duration-300 hover:border-white/30";
   const glassInput = "w-full bg-slate-950/60 backdrop-blur-md border border-white/15 rounded-2xl p-3 text-white outline-none focus:border-blue-400 focus:bg-slate-950/90 transition-all placeholder:text-slate-500 shadow-inner";
 
@@ -277,7 +278,7 @@ export default function Home() {
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight text-white">Trading Journal</h1>
               <p className="text-xs text-slate-300 font-medium">
-                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი (Firebase)' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
+                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი (MongoDB Atlas)' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
               </p>
             </div>
           </div>
@@ -576,7 +577,7 @@ export default function Home() {
               </div>
 
               <button type="button" onClick={handleSave} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-3.5 rounded-2xl font-extrabold transition-all mt-4 shadow-[0_0_25px_rgba(59,130,246,0.6)] border border-blue-300/50">
-                შენახვა ბაზაში
+                შენახვა MongoDB ბაზაში
               </button>
             </form>
           </div>
