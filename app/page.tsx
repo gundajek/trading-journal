@@ -47,7 +47,21 @@ export default function Home() {
   const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
-  const [liveTrades, setLiveTrades] = useState<Trade[]>([]);
+  // ტრეიდების წამოღება LocalStorage-დან
+  const [liveTrades, setLiveTrades] = useState<Trade[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('local_trades');
+      if (saved) {
+        try { return JSON.parse(saved); } catch { return []; }
+      }
+    }
+    return [];
+  });
+
+  // ტრეიდების შენახვა LocalStorage-ში როდესაც იცვლება
+  useEffect(() => {
+    localStorage.setItem('local_trades', JSON.stringify(liveTrades));
+  }, [liveTrades]);
 
   const [backtestSessions, setBacktestSessions] = useState<BacktestSession[]>([
     { id: '1', name: 'სტრატეგია #1 (FVG Test)', trades: [] }
@@ -55,29 +69,6 @@ export default function Home() {
   const [activeSessionId, setActiveSessionId] = useState<string>('1');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // MongoDB-იდან ტრეიდების წამოღება API-ს მეშვეობით
-  const fetchTrades = async () => {
-    try {
-      const res = await fetch('/api/trades');
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        // MongoDB აბრუნებს _id-ს, გადავთარგმნოთ id-დ
-        const formatted = data.map((t: any) => ({
-          ...t,
-          id: t._id || t.id
-        }));
-        const live = formatted.filter((t: Trade) => t.account !== 'Backtest');
-        setLiveTrades(live);
-      }
-    } catch (error) {
-      console.error("Fetch Error: ", error);
-    }
-  };
-
-  useEffect(() => {
-    fetchTrades();
-  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -131,7 +122,7 @@ export default function Home() {
     return h > 0 ? `${h}სთ ${m}წთ` : `${m}წთ`;
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const riskVal = parseFloat(formData.risk);
     const targetVal = parseFloat(formData.targetPnl);
     const realizedVal = parseFloat(formData.realizedPnl);
@@ -142,7 +133,8 @@ export default function Home() {
       realizedRR = realizedVal < 0 ? `-${ratio}R` : `1:${ratio}`;
     }
 
-    const newTrade = {
+    const newTrade: Trade = {
+      id: Date.now().toString(),
       openTime: formData.openTime,
       closeTime: formData.closeTime,
       day: getDayOfWeek(formData.openTime),
@@ -156,37 +148,23 @@ export default function Home() {
       images: formData.images
     };
 
-    try {
-      if (activeTab === 'backtest') {
-        setBacktestSessions(prev => prev.map(session => {
-          if (session.id === activeSessionId) {
-            return { ...session, trades: [{ id: Date.now().toString(), ...newTrade }, ...session.trades] };
-          }
-          return session;
-        }));
-      } else {
-        // გაგზავნა MongoDB API-ში
-        const res = await fetch('/api/trades', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newTrade)
-        });
-        if (res.ok) {
-          fetchTrades(); // მონაცემების განახლება
+    if (activeTab === 'backtest') {
+      setBacktestSessions(prev => prev.map(session => {
+        if (session.id === activeSessionId) {
+          return { ...session, trades: [newTrade, ...session.trades] };
         }
-      }
-    } catch (error) {
-      console.error("შეცდომა შენახვისას: ", error);
-      alert("ვერ მოხერხდა ბაზაში შენახვა.");
+        return session;
+      }));
+    } else {
+      setLiveTrades(prev => [newTrade, ...prev]);
     }
 
     setIsModalOpen(false);
     setFormData({ ...formData, setup: '', risk: '', targetPnl: '', realizedPnl: '', images: [] });
   };
 
-  const handleDeleteTrade = async (tradeId: string) => {
+  const handleDeleteTrade = (tradeId: string) => {
     if (activeTab === 'live') {
-      // წაშლის ლოგიკა მომავალში მარტივად დაემატება API-ში, ახლა ადგილზე ვფილტრავთ ან ველოდებით
       setLiveTrades(prev => prev.filter(t => t.id !== tradeId));
     } else {
       setBacktestSessions(prev => prev.map(session => {
@@ -278,7 +256,7 @@ export default function Home() {
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight text-white">Trading Journal</h1>
               <p className="text-xs text-slate-300 font-medium">
-                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი (MongoDB Atlas)' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
+                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი (Local Storage)' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
               </p>
             </div>
           </div>
@@ -453,7 +431,7 @@ export default function Home() {
                 {trades.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-8 text-center text-slate-400">
-                      ტრეიდები არ მოიძებნა ბაზაში. დაამატეთ ახალი ტრეიდი.
+                      ტრეიდები არ მოიძებნა. დაამატეთ ახალი ტრეიდი.
                     </td>
                   </tr>
                 ) : (
@@ -577,7 +555,7 @@ export default function Home() {
               </div>
 
               <button type="button" onClick={handleSave} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-3.5 rounded-2xl font-extrabold transition-all mt-4 shadow-[0_0_25px_rgba(59,130,246,0.6)] border border-blue-300/50">
-                შენახვა MongoDB ბაზაში
+                შენახვა ჟურნალში
               </button>
             </form>
           </div>
