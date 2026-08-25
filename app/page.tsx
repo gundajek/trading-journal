@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, ChangeEvent, useEffect, useRef } from 'react';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const getCurrentDateTimeLocal = () => {
   const now = new Date();
@@ -47,7 +47,6 @@ export default function Home() {
   const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
-  // ტრეიდების წამოღება LocalStorage-დან
   const [liveTrades, setLiveTrades] = useState<Trade[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('local_trades');
@@ -58,15 +57,49 @@ export default function Home() {
     return [];
   });
 
-  // ტრეიდების შენახვა LocalStorage-ში როდესაც იცვლება
   useEffect(() => {
     localStorage.setItem('local_trades', JSON.stringify(liveTrades));
   }, [liveTrades]);
 
-  const [backtestSessions, setBacktestSessions] = useState<BacktestSession[]>([
+  const DEFAULT_BACKTEST_SESSIONS: BacktestSession[] = [
     { id: '1', name: 'სტრატეგია #1 (FVG Test)', trades: [] }
-  ]);
-  const [activeSessionId, setActiveSessionId] = useState<string>('1');
+  ];
+
+  const [backtestSessions, setBacktestSessions] = useState<BacktestSession[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('backtest_sessions');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch { /* ignore corrupted data and fall back to default */ }
+      }
+    }
+    return DEFAULT_BACKTEST_SESSIONS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('backtest_sessions', JSON.stringify(backtestSessions));
+  }, [backtestSessions]);
+
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('backtest_sessions');
+      const savedActiveId = localStorage.getItem('active_backtest_session_id');
+      if (saved && savedActiveId) {
+        try {
+          const parsed: BacktestSession[] = JSON.parse(saved);
+          if (parsed.some(s => s.id === savedActiveId)) return savedActiveId;
+          if (parsed.length > 0) return parsed[0].id;
+        } catch { /* ignore corrupted data and fall back to default */ }
+      }
+    }
+    return '1';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('active_backtest_session_id', activeSessionId);
+  }, [activeSessionId]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -256,7 +289,7 @@ export default function Home() {
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight text-white">Trading Journal</h1>
               <p className="text-xs text-slate-300 font-medium">
-                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი (Local Storage)' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
+                {activeTab === 'live' ? '🟢 ლაივ რეჟიმი' : `🔬 ბექტესტი: ${currentBacktestSession?.name}`}
               </p>
             </div>
           </div>
