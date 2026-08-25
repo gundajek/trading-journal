@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, ChangeEvent, useEffect, useRef } from 'react';
-import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, PieChart, Pie, Cell, BarChart, Bar, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const getCurrentDateTimeLocal = () => {
   const now = new Date();
@@ -268,6 +268,20 @@ export default function Home() {
   const strategyData = Object.keys(strategyDataMap).map(key => ({ name: key, value: strategyDataMap[key] }));
   const COLORS = ['#60a5fa', '#34d399', '#a78bfa', '#fbbf24', '#f87171'];
 
+  const DAY_ORDER = ['ორშაბათი', 'სამშაბათი', 'ოთხშაბათი', 'ხუთშაბათი', 'პარასკევი', 'შაბათი', 'კვირა'];
+  const dayStatsMap: Record<string, { wins: number; losses: number }> = {};
+  DAY_ORDER.forEach(day => { dayStatsMap[day] = { wins: 0, losses: 0 }; });
+  trades.forEach(t => {
+    if (!dayStatsMap[t.day]) return;
+    if (t.realizedPnl > 0) dayStatsMap[t.day].wins += 1;
+    else dayStatsMap[t.day].losses += 1;
+  });
+  const dayOfWeekData = DAY_ORDER.map(day => ({
+    name: day,
+    'მოგებები': dayStatsMap[day].wins,
+    'წაგებები': dayStatsMap[day].losses,
+  }));
+
   const glassCard = "bg-slate-900/50 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all duration-300 hover:border-white/30";
   const glassInput = "w-full bg-slate-950/60 backdrop-blur-md border border-white/15 rounded-2xl p-3 text-white outline-none focus:border-blue-400 focus:bg-slate-950/90 transition-all placeholder:text-slate-500 shadow-inner";
 
@@ -439,6 +453,25 @@ export default function Home() {
                   {entry.name}
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className={`${glassCard} p-6 lg:col-span-3`}>
+            <h3 className="text-sm font-bold text-slate-100 mb-6 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span> მოგება/წაგება კვირის დღეების მიხედვით
+            </h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dayOfWeekData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" vertical={false} />
+                  <XAxis dataKey="name" stroke="#cbd5e1" fontSize={12} tickLine={false} axisLine={{ stroke: '#ffffff15' }} />
+                  <YAxis stroke="#cbd5e1" fontSize={12} tickLine={false} axisLine={{ stroke: '#ffffff15' }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255,255,255,0.2)', color: '#f8fafc', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                  <Legend wrapperStyle={{ fontSize: '12px', color: '#cbd5e1', paddingTop: '8px' }} />
+                  <Bar dataKey="მოგებები" fill="#34d399" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="წაგებები" fill="#f87171" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>
