@@ -43,6 +43,8 @@ interface BacktestSession {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'live' | 'backtest'>('live');
+  const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table');
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -282,6 +284,64 @@ export default function Home() {
     'წაგებები': dayStatsMap[day].losses,
   }));
 
+  const MONTH_NAMES = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი', 'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
+  const WEEKDAY_HEADERS = ['კვ', 'ორშ', 'სამ', 'ოთხ', 'ხუთ', 'პარ', 'შაბ'];
+
+  const calendarYear = calendarDate.getFullYear();
+  const calendarMonth = calendarDate.getMonth();
+
+  interface DayStat { pnl: number; count: number; wins: number }
+  const dailyStatsMap: Record<string, DayStat> = {};
+  trades.forEach(t => {
+    if (!t.openTime) return;
+    const d = new Date(t.openTime);
+    if (isNaN(d.getTime())) return;
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!dailyStatsMap[key]) dailyStatsMap[key] = { pnl: 0, count: 0, wins: 0 };
+    dailyStatsMap[key].pnl += t.realizedPnl;
+    dailyStatsMap[key].count += 1;
+    if (t.realizedPnl > 0) dailyStatsMap[key].wins += 1;
+  });
+
+  interface CalCell { date: number; key: string; inCurrentMonth: boolean }
+  const firstOfMonth = new Date(calendarYear, calendarMonth, 1);
+  const startWeekday = firstOfMonth.getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
+
+  const calendarCells: CalCell[] = [];
+  for (let i = startWeekday - 1; i >= 0; i--) {
+    const date = daysInPrevMonth - i;
+    const m = calendarMonth === 0 ? 11 : calendarMonth - 1;
+    const y = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
+    calendarCells.push({ date, inCurrentMonth: false, key: `${y}-${m}-${date}` });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    calendarCells.push({ date: d, inCurrentMonth: true, key: `${calendarYear}-${calendarMonth}-${d}` });
+  }
+  while (calendarCells.length % 7 !== 0) {
+    const nextIdx = calendarCells.length - (startWeekday + daysInMonth) + 1;
+    const m = calendarMonth === 11 ? 0 : calendarMonth + 1;
+    const y = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
+    calendarCells.push({ date: nextIdx, inCurrentMonth: false, key: `${y}-${m}-${nextIdx}` });
+  }
+  const calendarWeeks: CalCell[][] = [];
+  for (let i = 0; i < calendarCells.length; i += 7) calendarWeeks.push(calendarCells.slice(i, i + 7));
+
+  const monthTrades = trades.filter(t => {
+    if (!t.openTime) return false;
+    const d = new Date(t.openTime);
+    return !isNaN(d.getTime()) && d.getFullYear() === calendarYear && d.getMonth() === calendarMonth;
+  });
+  const monthPnl = monthTrades.reduce((acc, t) => acc + t.realizedPnl, 0);
+  const monthWinRate = monthTrades.length > 0 ? Math.round((monthTrades.filter(t => t.realizedPnl > 0).length / monthTrades.length) * 100) : 0;
+
+  const goPrevMonth = () => setCalendarDate(new Date(calendarYear, calendarMonth - 1, 1));
+  const goNextMonth = () => setCalendarDate(new Date(calendarYear, calendarMonth + 1, 1));
+  const goToday = () => setCalendarDate(new Date());
+  const weekPnl = (week: CalCell[]) => week.reduce((acc, cell) => acc + (dailyStatsMap[cell.key]?.pnl || 0), 0);
+  const weekHasTrades = (week: CalCell[]) => week.some(cell => dailyStatsMap[cell.key]);
+
   const glassCard = "bg-slate-900/50 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all duration-300 hover:border-white/30";
   const glassInput = "w-full bg-slate-950/60 backdrop-blur-md border border-white/15 rounded-2xl p-3 text-white outline-none focus:border-blue-400 focus:bg-slate-950/90 transition-all placeholder:text-slate-500 shadow-inner";
 
@@ -476,8 +536,94 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Table Section */}
+        {/* Table / Calendar Section */}
         <div className={`${glassCard} overflow-hidden pb-4 shadow-2xl`}>
+          <div className="flex items-center justify-between px-6 pt-5 pb-2">
+            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-400"></span> ტრეიდების ისტორია
+            </h3>
+            <div className="flex bg-slate-950/60 p-1 rounded-xl border border-white/10">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'table' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'text-slate-400 hover:text-white'}`}
+              >
+                ცხრილი
+              </button>
+              <button
+                onClick={() => setViewMode('calendar')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'calendar' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'text-slate-400 hover:text-white'}`}
+              >
+                კალენდარი
+              </button>
+            </div>
+          </div>
+
+          {viewMode === 'calendar' ? (
+            <div className="px-4 md:px-6 pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <button onClick={goPrevMonth} className="bg-white/10 hover:bg-white/20 text-white w-9 h-9 rounded-xl flex items-center justify-center transition-colors border border-white/10">‹</button>
+                  <h4 className="text-lg font-extrabold text-white min-w-[180px] text-center">{MONTH_NAMES[calendarMonth]} {calendarYear}</h4>
+                  <button onClick={goNextMonth} className="bg-white/10 hover:bg-white/20 text-white w-9 h-9 rounded-xl flex items-center justify-center transition-colors border border-white/10">›</button>
+                  <button onClick={goToday} className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-xl text-xs font-bold transition-colors border border-white/10">დღეს</button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="bg-slate-950/60 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200">ტრეიდი: <span className="text-white">{monthTrades.length}</span></span>
+                  <span className={`bg-slate-950/60 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold ${monthPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>P&L: {monthPnl >= 0 ? '+' : ''}${monthPnl.toFixed(2)}</span>
+                  <span className="bg-slate-950/60 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200">WIN: <span className="text-white">{monthWinRate}%</span></span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <div className="min-w-[820px]">
+                  <div className="grid grid-cols-8 gap-2 mb-2">
+                    {WEEKDAY_HEADERS.map(w => (
+                      <div key={w} className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center py-1">{w}</div>
+                    ))}
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center py-1">კვირა</div>
+                  </div>
+                  <div className="space-y-2">
+                    {calendarWeeks.map((week, wIdx) => (
+                      <div key={wIdx} className="grid grid-cols-8 gap-2">
+                        {week.map(cell => {
+                          const stat = dailyStatsMap[cell.key];
+                          const isToday = cell.inCurrentMonth && cell.date === new Date().getDate() && calendarMonth === new Date().getMonth() && calendarYear === new Date().getFullYear();
+                          const isWin = stat && stat.pnl > 0;
+                          const isLoss = stat && stat.pnl <= 0 && stat.count > 0;
+                          return (
+                            <div
+                              key={cell.key}
+                              className={`rounded-xl border p-2 h-20 flex flex-col justify-between transition-all
+                                ${!cell.inCurrentMonth ? 'opacity-30 border-white/5 bg-white/[0.02]' :
+                                  isWin ? 'border-emerald-500/40 bg-emerald-500/10' :
+                                  isLoss ? 'border-red-500/40 bg-red-500/10' :
+                                  'border-white/10 bg-slate-950/40'}
+                                ${isToday ? 'ring-2 ring-blue-400' : ''}`}
+                            >
+                              <span className={`text-xs font-bold ${cell.inCurrentMonth ? 'text-slate-200' : 'text-slate-500'}`}>{cell.date}</span>
+                              {stat && cell.inCurrentMonth ? (
+                                <div className="text-right">
+                                  <div className={`text-xs font-extrabold ${isWin ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {stat.pnl >= 0 ? '+' : ''}${stat.pnl.toFixed(0)}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">{stat.count} ტრეიდი</div>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                        <div className="rounded-xl border border-white/10 bg-slate-950/40 p-2 h-20 flex items-center justify-center">
+                          <span className={`text-xs font-bold ${weekHasTrades(week) ? (weekPnl(week) >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-slate-500'}`}>
+                            {weekHasTrades(week) ? `${weekPnl(week) >= 0 ? '+' : ''}$${weekPnl(week).toFixed(0)}` : '-'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left min-w-[1000px]">
               <thead className="bg-white/10 text-slate-200 border-b border-white/15 text-xs uppercase tracking-wider font-bold">
@@ -550,6 +696,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </div>
 
