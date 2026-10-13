@@ -467,7 +467,7 @@ export default function Home() {
           <div className={`${glassCard} p-5`}>
             <p className="text-xs text-slate-300 font-semibold uppercase tracking-wider mb-1">Total P&L</p>
             <p className={`text-2xl font-extrabold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {totalPnl >= 0 ? '+' : ''}\${totalPnl.toFixed(2)}
+              {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}
             </p>
           </div>
           <div className={`${glassCard} p-5`}>
@@ -476,7 +476,7 @@ export default function Home() {
           </div>
           <div className={`${glassCard} p-5`}>
             <p className="text-xs text-slate-300 font-semibold uppercase tracking-wider mb-1">Max Drawdown</p>
-            <p className="text-2xl font-extrabold text-red-400">-\${maxDrawdown.toFixed(2)}</p>
+            <p className="text-2xl font-extrabold text-red-400">-${maxDrawdown.toFixed(2)}</p>
           </div>
           <div className={`${glassCard} p-5`}>
             <p className="text-xs text-slate-300 font-semibold uppercase tracking-wider mb-1">სულ ტრეიდი</p>
@@ -484,11 +484,11 @@ export default function Home() {
           </div>
           <div className={`${glassCard} p-5`}>
             <p className="text-xs text-slate-300 font-semibold uppercase tracking-wider mb-1">საშუალო მოგება</p>
-            <p className="text-2xl font-extrabold text-emerald-400">\${avgWin.toFixed(2)}</p>
+            <p className="text-2xl font-extrabold text-emerald-400">${avgWin.toFixed(2)}</p>
           </div>
           <div className={`${glassCard} p-5`}>
             <p className="text-xs text-slate-300 font-semibold uppercase tracking-wider mb-1">საშუალო წაგება</p>
-            <p className="text-2xl font-extrabold text-red-400">-\${avgLoss.toFixed(2)}</p>
+            <p className="text-2xl font-extrabold text-red-400">-${avgLoss.toFixed(2)}</p>
           </div>
           <div className={`${glassCard} p-5`}>
             <p className="text-xs text-slate-300 font-semibold uppercase tracking-wider mb-1">Win/Loss Ratio</p>
@@ -594,7 +594,7 @@ export default function Home() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="bg-slate-950/60 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200">ტრეიდი: <span className="text-white">{monthTrades.length}</span></span>
-                  <span className={`bg-slate-950/60 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold ${monthPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>P&L: {monthPnl >= 0 ? '+' : ''}\${monthPnl.toFixed(2)}</span>
+                  <span className={`bg-slate-950/60 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold ${monthPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>P&L: {monthPnl >= 0 ? '+' : ''}${monthPnl.toFixed(2)}</span>
                   <span className="bg-slate-950/60 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200">WIN: <span className="text-white">{monthWinRate}%</span></span>
                 </div>
               </div>
@@ -629,7 +629,7 @@ export default function Home() {
                               {stat && cell.inCurrentMonth ? (
                                 <div className="text-right">
                                   <div className={`text-xs font-extrabold ${isWin ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {stat.pnl >= 0 ? '+' : ''}\${stat.pnl.toFixed(0)}
+                                    {stat.pnl >= 0 ? '+' : ''}${stat.pnl.toFixed(0)}
                                   </div>
                                   <div className="text-[10px] text-slate-400">{stat.count} ტრეიდი</div>
                                 </div>
@@ -659,7 +659,7 @@ export default function Home() {
                   <th className="px-6 py-4">დრო (საათი)</th>
                   <th className="px-6 py-4">საბოლოო R:R</th>
                   <th className="px-6 py-4">დაგეგმილი P/L</th>
-                  <th className="px-6 py-4">საბოლოო (\$)</th>
+                  <th className="px-6 py-4">საბოლოო ($)</th>
                   <th className="px-6 py-4">ჩარტები</th>
                   <th className="px-6 py-4 text-center">მოქმედება</th>
                 </tr>
@@ -688,9 +688,9 @@ export default function Home() {
                         <div className="text-slate-300 text-xs mt-0.5">{trade.duration}</div>
                       </td>
                       <td className="px-6 py-4 font-mono text-slate-200">{trade.rr}</td>
-                      <td className="px-6 py-4 text-slate-300">\${trade.targetPnl}</td>
+                      <td className="px-6 py-4 text-slate-300">${trade.targetPnl}</td>
                       <td className={`px-6 py-4 font-bold ${trade.realizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {trade.realizedPnl > 0 ? '+' : ''}\${trade.realizedPnl}
+                        {trade.realizedPnl > 0 ? '+' : ''}${trade.realizedPnl}
                       </td>
                       <td className="px-6 py-4">
                         {trade.images?.length > 0 ? (
@@ -774,7 +774,7 @@ export default function Home() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">რისკი (\$)</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">რისკი ($)</label>
                   <input type="number" value={formData.risk} onChange={(e) => setFormData({...formData, risk: e.target.value})} className={glassInput} placeholder="0.00" />
                 </div>
                 <div>
@@ -782,7 +782,7 @@ export default function Home() {
                   <input type="number" value={formData.targetPnl} onChange={(e) => setFormData({...formData, targetPnl: e.target.value})} className={glassInput} placeholder="0.00" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">საბოლოო (\$)</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">საბოლოო ($)</label>
                   <input type="number" value={formData.realizedPnl} onChange={(e) => setFormData({...formData, realizedPnl: e.target.value})} className={glassInput} placeholder="0.00" />
                 </div>
               </div>
